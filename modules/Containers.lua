@@ -2,6 +2,7 @@ return function(require)
 	local Core = require("Core")
 	local Icons = require("Icons")
 	local Controls = require("Controls")
+	local Text = require("Text")
 	local Container = {}
 	Container.__index = Container
 
@@ -247,7 +248,7 @@ return function(require)
 		if options.Action then
 			local action = Core.new("TextButton", {
 				Name = "Action",
-				Text = options.Action.Text or "Open",
+				Text = Text.display(options.Action.Text or "Open"),
 				Font = window.Theme.Font,
 				TextSize = 11,
 				BackgroundTransparency = 1,
@@ -268,7 +269,7 @@ return function(require)
 			footer.Size = UDim2.new(1, 0, 0, 25)
 			footer.TextXAlignment = Enum.TextXAlignment.Center
 			function card:SetFooter(text)
-				footer.Text = tostring(text)
+				footer.Text = Text.display(text)
 			end
 		end
 		self:Register(card, options)
@@ -283,7 +284,7 @@ return function(require)
 		local row = self:Custom({ Name = options.Name or "Info", Height = 17 })
 		local label = Core.text(self.Window, row.Body, options.Name, 11, "TextSecondary")
 		label.Size = UDim2.new(0.52, 0, 1, 0)
-		local value = Core.text(self.Window, row.Body, options.Value, 11)
+		local value = Core.text(self.Window, row.Body, options.Value, 11, nil, true)
 		value.Position = UDim2.fromScale(0.52, 0)
 		value.Size = UDim2.new(0.48, 0, 1, 0)
 		value.TextXAlignment = Enum.TextXAlignment.Right
@@ -391,7 +392,7 @@ return function(require)
 			local tab = make(owner.Window, content, content, tabs, owner.Page)
 			local button = Core.new("TextButton", {
 				Name = options.Name,
-				Text = options.Icon and "" or options.Name,
+				Text = options.Icon and "" or Text.display(options.Name),
 				TextSize = 11,
 				AutoButtonColor = false,
 				BackgroundTransparency = 1,

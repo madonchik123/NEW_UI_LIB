@@ -2,14 +2,17 @@ return function(require)
 	local HttpService = game:GetService("HttpService")
 	local Core = require("Core")
 	local Storage = require("Storage")
+	local DataFiles = require("DataFiles")
+	local AutoLoad = require("AutoLoad")
+	local ConfigMigration = require("ConfigMigration")
+	local Fonts = require("Fonts")
 
 	local ThemeAliases = require("ThemeAliases")
 	local Config = {}
 	Config.__index = Config
 	local VERSION = 1
 	local MAX_ITEMS = 2048
-	local queuedSources = {}
-	local queuedCount = 0
+	local universalTags = { ["__unknownhub_key_system"] = "key", ["__uilib.autoload"] = "autoload" }
 
 	local function finite(value)
 		return type(value) == "number" and value == value and math.abs(value) < math.huge
@@ -20,6 +23,24 @@ return function(require)
 			assert(finite(value), "Config numbers must be finite")
 		end
 		return { Tag = kind, Value = values }
+	end
+
+	local function fontFields(family, weightName, styleName)
+		assert(type(family) == "string" and #family > 0 and #family <= 512, "Invalid font family")
+		assert(
+			family:match("^rbxasset://fonts/families/[%w_%-]+%.json$")
+				or family:match("^rbxassetid://%d+$")
+				or family:match("^https?://www%.roblox%.com/asset/%?id=%d+$"),
+			"Unsupported font family URI"
+		)
+		assert(
+			type(weightName) == "string" and #weightName <= 32 and type(styleName) == "string" and #styleName <= 32,
+			"Invalid font attributes"
+		)
+		local weight, style = Enum.FontWeight[weightName], Enum.FontStyle[styleName]
+		assert(typeof(weight) == "EnumItem" and weight.EnumType == Enum.FontWeight, "Invalid font weight")
+		assert(typeof(style) == "EnumItem" and style.EnumType == Enum.FontStyle, "Invalid font style")
+		return weight, style
 	end
 
 	local function encode(value, depth, seen)
@@ -46,6 +67,10 @@ return function(require)
 		end
 		if kind == "EnumItem" then
 			return { Tag = kind, Enum = tostring(value.EnumType), Value = value.Name }
+		end
+		if kind == "Font" then
+			fontFields(value.Family, value.Weight.Name, value.Style.Name)
+			return { Tag = kind, Family = value.Family, Weight = value.Weight.Name, Style = value.Style.Name }
 		end
 		if kind == "UDim" then
 			return numericTag(kind, { value.Scale, value.Offset })
@@ -92,6 +117,10 @@ return function(require)
 			assert(type(value.Enum) == "string" and type(values) == "string", "Invalid enum")
 			local name = value.Enum:gsub("^Enum%.", "")
 			return Enum[name][values]
+		end
+		if tag == "Font" then
+			local weight, style = fontFields(value.Family, value.Weight, value.Style)
+			return Font.new(value.Family, weight, style)
 		end
 		assert(type(values) == "table" and #values <= MAX_ITEMS, "Invalid tagged value")
 		if tag == "Table" then
@@ -177,6 +206,10 @@ return function(require)
 		local prefs = document.Preferences
 		assert(prefs.AutoSave == nil or type(prefs.AutoSave) == "boolean", "Invalid autosave preference")
 		assert(prefs.AutoLoad == nil or type(prefs.AutoLoad) == "boolean", "Invalid autoload preference")
+		assert(
+			prefs.LoadSettings == nil or type(prefs.LoadSettings) == "boolean",
+			"Invalid settings loading preference"
+		)
 		assert(prefs.ActiveProfile == nil or profileName(prefs.ActiveProfile), "Invalid active profile")
 		validateEntries(prefs.Values or {})
 		for _, group in ipairs({ document.Profiles, document.ThemeProfiles }) do
@@ -215,14 +248,16 @@ return function(require)
 			Window = window,
 			Scope = scope,
 			Storage = storage,
-			StorageKey = "config_" .. namespace,
+			StorageKey = namespace,
+			PreviousStorageKey = "config_" .. namespace,
 			Items = {},
 			Order = {},
 			Listeners = {},
 			ThemeBindings = {},
 			ThemeCallbacks = {},
 			AutoSave = options.AutoSave ~= false,
-			AutoLoad = options.AutoLoad ~= false,
+			AutoLoad = true,
+			LoadSettings = options.LoadSettings ~= false and options.AutoLoadSettings ~= false,
 			ActiveProfile = "Default",
 			Dirty = false,
 			Replaying = false,
@@ -257,6 +292,30 @@ return function(require)
 				storage:Destroy()
 			end
 		end)
+		self.DataFiles = DataFiles.new(storage, scope, function(name)
+			local tag = name == "key" and "__unknownhub_key_system" or "__uilib.autoload"
+			local packed = self.Document.Data[tag]
+			if packed ~= nil then
+				local ok, value = pcall(decode, packed)
+				if ok then
+					return value
+				end
+			end
+		end)
+		self.AutoLoader = AutoLoad.new(storage, scope, options, self.DataFiles)
+		self.AutoLoader:Subscribe(scope, function(data)
+			self.AutoLoad = data.enabled ~= false
+			self:_status(self.Status, self.Message)
+		end)
+		local autoLoadStarted = false
+		self:Subscribe(scope, function()
+			if self.Initialized and not autoLoadStarted then
+				autoLoadStarted = true
+				Core.delay(scope, 0, function()
+					self.AutoLoader:Initialize()
+				end)
+			end
+		end)
 		return self
 	end
 
@@ -270,6 +329,7 @@ return function(require)
 			Busy = self.Busy,
 			AutoSave = self.AutoSave,
 			AutoLoad = self.AutoLoad,
+			LoadSettings = self.LoadSettings,
 			ActiveProfile = self.ActiveProfile,
 		})
 	end
@@ -425,7 +485,7 @@ return function(require)
 			return false, "Load storage successfully before saving; call Initialize() to retry."
 		end
 		self.Document.Preferences.AutoSave = self.AutoSave
-		self.Document.Preferences.AutoLoad = self.AutoLoad
+		self.Document.Preferences.LoadSettings = self.LoadSettings
 		self.Document.Preferences.ActiveProfile = self.ActiveProfile
 		local ok, raw = pcall(HttpService.JSONEncode, HttpService, self.Document)
 		if not ok or #raw > Storage.MaxBytes then
@@ -549,6 +609,9 @@ return function(require)
 	end
 
 	function Config:Initialize()
+		if not self.Scope.Alive then
+			return false, "Config was destroyed."
+		end
 		if self.Initialized and not self.ReadFailed then
 			return true, self.Message
 		end
@@ -557,6 +620,20 @@ return function(require)
 		end
 		self.Busy = true
 		local callOk, ok, raw = pcall(self.Storage.Read, self.Storage, self.StorageKey)
+		if not self.Scope.Alive then
+			self.Busy = false
+			return false, "Config was destroyed."
+		end
+		if callOk and ok and raw == nil then
+			callOk, ok, raw = pcall(self.Storage.Read, self.Storage, self.PreviousStorageKey)
+			if not self.Scope.Alive then
+				self.Busy = false
+				return false, "Config was destroyed."
+			end
+		end
+		if callOk and ok and raw == nil and self.Storage.ReadLegacy then
+			callOk, ok, raw = pcall(self.Storage.ReadLegacy, self.Storage, automaticName())
+		end
 		self.Busy = false
 		if not self.Scope.Alive then
 			return false, "Config was destroyed."
@@ -569,6 +646,12 @@ return function(require)
 		end
 		if raw ~= nil then
 			local decoded, document = pcall(HttpService.JSONDecode, HttpService, raw)
+			if decoded and type(document) == "table" and document.Version == nil then
+				local migrated, value = ConfigMigration.Convert(document, self.Items)
+				if migrated then
+					document = value
+				end
+			end
 			local valid = decoded and pcall(validateDocument, document)
 			if not valid then
 				self.Initialized = true
@@ -579,17 +662,24 @@ return function(require)
 			self.Document = document
 			self.Document.Preferences.Values = document.Preferences.Values or {}
 			local prefs = document.Preferences
+			if prefs.LoadSettings == nil and type(prefs.AutoLoad) == "boolean" then
+				prefs.LoadSettings = prefs.AutoLoad
+			end
 			if type(prefs.AutoSave) == "boolean" then
 				self.AutoSave = prefs.AutoSave
 			end
-			if type(prefs.AutoLoad) == "boolean" then
-				self.AutoLoad = prefs.AutoLoad
+			if
+				self.Options.LoadSettings == nil
+				and self.Options.AutoLoadSettings == nil
+				and type(prefs.LoadSettings) == "boolean"
+			then
+				self.LoadSettings = prefs.LoadSettings
 			end
 			self.ActiveProfile = profileName(prefs.ActiveProfile) or "Default"
 		end
 		self.Initialized = true
 		self.ReadFailed = false
-		if self.AutoLoad and self.Document.Profiles[self.ActiveProfile] then
+		if self.LoadSettings and self.Document.Profiles[self.ActiveProfile] then
 			return self:Load()
 		end
 		self.Generation += 1
@@ -599,7 +689,7 @@ return function(require)
 				self:_apply(id, item)
 			end
 		end
-		self:_status("ready", self.AutoLoad and "No saved profile yet." or "Automatic loading is disabled.")
+		self:_status("ready", self.LoadSettings and "No saved profile yet." or "Settings restoration is disabled.")
 		return true, self.Message
 	end
 
@@ -691,11 +781,8 @@ return function(require)
 	end
 
 	function Config:SetAutoLoad(enabled)
-		if self.Busy then
-			return false, "A config operation is already running."
-		end
-		self.AutoLoad = enabled == true
-		return self:_commit()
+		local _, ok, message = self.AutoLoader:SetEnabled(enabled)
+		return ok, message
 	end
 
 	function Config:Flush()
@@ -708,6 +795,14 @@ return function(require)
 	end
 
 	function Config:ReadData(tag)
+		local name = universalTags[tag]
+		if name then
+			local ok, value, message = self.DataFiles:Read(name)
+			if not ok then
+				return nil, message or value or "Unable to read shared settings."
+			end
+			return value
+		end
 		local value = self.Document.Data[tag]
 		if value == nil then
 			return nil
@@ -717,6 +812,24 @@ return function(require)
 	end
 
 	function Config:WriteData(tag, value)
+		local name = universalTags[tag]
+		if name then
+			if not self.Scope.Alive then
+				return false, "Config was destroyed."
+			end
+			self:_status("saving", name == "key" and "Saving access key…" or "Saving Auto load UI…")
+			if not self.Scope.Alive then
+				return false, "Config was destroyed."
+			end
+			local ok, message = self.DataFiles:Write(name, value)
+			if ok then
+				self.Document.Data[tag] = nil
+			end
+			if self.Scope.Alive then
+				self:_status(ok and "saved" or "error", message)
+			end
+			return ok, message
+		end
 		if self.Busy then
 			return false, "A config operation is already running."
 		end
@@ -761,7 +874,9 @@ return function(require)
 		end
 		local patch = {}
 		for key, value in pairs(theme) do
-			if typeof(value) == typeof(self.Window.Theme[key]) then
+			if key == "Font" or key == "FontBold" then
+				patch[key] = Fonts.resolve(value)
+			elseif typeof(value) == typeof(self.Window.Theme[key]) then
 				patch[key] = value
 			end
 		end
@@ -813,7 +928,9 @@ return function(require)
 		end
 		local patch = {}
 		for key, value in pairs(theme) do
-			if typeof(value) == typeof(self.Window.Theme[key]) then
+			if key == "Font" or key == "FontBold" then
+				patch[key] = Fonts.resolve(value)
+			elseif typeof(value) == typeof(self.Window.Theme[key]) then
 				patch[key] = value
 			end
 		end
@@ -878,7 +995,7 @@ return function(require)
 				end
 			end
 			pcall(function()
-				record.Instance[record.Property] = value
+				Core.assign(record.Instance, record.Property, value)
 			end)
 		end
 		for record in pairs(self.ThemeCallbacks) do
@@ -896,155 +1013,23 @@ return function(require)
 	end
 
 	function Config:ConfigureAutoLoad(options)
-		options = options or {}
-		local data = self:ReadData("__uilib.autoload") or {}
-		for key, value in pairs(options) do
-			data[key] = value
-		end
-		local requested = options.enabled
-		if requested == nil then
-			requested = options.Enabled
-		end
-		if requested == nil then
-			requested = options.AutoLoad
-		end
-		if requested ~= nil then
-			data.enabled = requested == true
-		end
-		data.loaderUrl = data.loaderUrl
-			or data.LoaderUrl
-			or data.AutoLoadUrl
-			or self.Options.AutoLoadUrl
-			or self.Options.LoaderUrl
-			or ""
-		data.gameIds = data.gameIds or data.GameIds or { tostring(game.GameId) }
-		data.placeIds = data.placeIds or data.PlaceIds or {}
-		if data.enabled ~= nil then
-			self.AutoLoad = data.enabled == true
-		end
-		data.enabled = self.AutoLoad
-		self.AutoLoadData = data
-		local ok, message = self:WriteData("__uilib.autoload", data)
-		if self.AutoLoad and ((type(data.loaderUrl) == "string" and #data.loaderUrl > 0) or data.Source) then
-			local queued, queueMessage = self:QueueAutoLoad(data)
-			data.QueueStatus = queueMessage
-			data.Queued = queued
-		end
-		return data, ok, message
+		return self.AutoLoader:Configure(options)
 	end
 	function Config:SetAutoLoadEnabled(enabled, options)
-		options = table.clone(options or {})
-		options.enabled = enabled == true
-		return self:ConfigureAutoLoad(options)
+		return self.AutoLoader:SetEnabled(enabled, options)
 	end
 	function Config:QueueAutoLoad(data)
-		data = data or self.AutoLoadData or {}
-		if not self.AutoLoad or data.enabled == false then
-			return false, "Automatic loading is disabled."
-		end
-		local queue = self.Storage.Capabilities and self.Storage.Capabilities.queue_on_teleport
-		if type(queue) ~= "function" then
-			return false, "queue_on_teleport is unavailable in this runtime."
-		end
-		local source = data.Source
-		if type(source) ~= "string" or #source == 0 then
-			local url = data.loaderUrl or data.LoaderUrl
-			if type(url) ~= "string" or not url:match("^https://[^%s]+$") then
-				return false, "Configure an HTTPS loader URL."
-			end
-			local payload = HttpService:JSONEncode({
-				Url = url,
-				GameIds = data.gameIds or {},
-				PlaceIds = data.placeIds or {},
-				Path = self:GetConfigFolder() .. "/" .. self.StorageKey .. ".json",
-			})
-
-			source = string.format(
-				[=[do
-local data = game:GetService("HttpService"):JSONDecode(%q)
-if type(readfile) == "function" then
- local ok, raw = pcall(readfile, data.Path)
- if ok then
-  local parsed, config = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
-  if parsed and type(config) == "table" and type(config.Preferences) == "table" and config.Preferences.AutoLoad == false then return end
- end
-end
-local function matches(ids, target)
- for _, id in ipairs(ids) do if tostring(id) == tostring(target) then return true end end
- return false
-end
-if #data.GameIds > 0 and not matches(data.GameIds, game.GameId) then return end
-if #data.GameIds == 0 and #data.PlaceIds > 0 and not matches(data.PlaceIds, game.PlaceId) then return end
-if type(request) ~= "function" or type(loadstring) ~= "function" then return end
-local ok, response = pcall(request, {Url = data.Url, Method = "GET"})
-if not ok or type(response) ~= "table" or type(response.StatusCode) ~= "number" or response.StatusCode < 200 or response.StatusCode >= 300 then return end
-local chunk = loadstring(response.Body)
-if chunk then chunk() end
-end]=],
-				payload
-			)
-		end
-		if self.QueuedSource == source then
-			return true, "Already queued."
-		end
-		if #source > 262144 then
-			return false, "Teleport source exceeds the size limit."
-		end
-		if queuedSources[source] then
-			return true, "Already queued in this runtime."
-		end
-		if queuedCount >= 16 then
-			return false, "Teleport loader queue limit reached."
-		end
-		local ok = pcall(queue, source)
-		if ok then
-			self.QueuedSource = source
-			queuedSources[source] = true
-			queuedCount += 1
-		end
-		return ok, ok and "Queued for teleport." or "Unable to queue for teleport."
+		return self.AutoLoader:Queue(data)
 	end
 	function Config:RunAutoLoad(data)
-		if not self.AutoLoad then
-			return false, "Automatic loading is disabled."
+		return self.AutoLoader:Run(data)
+	end
+	function Config:SetLoadSettings(enabled)
+		if self.Busy then
+			return false, "A config operation is already running."
 		end
-		data = data or self.AutoLoadData or self:ReadData("__uilib.autoload") or {}
-		if data.enabled == false then
-			return false, "Automatic loading is disabled."
-		end
-		local function matches(ids, target)
-			for _, id in ipairs(ids or {}) do
-				if tostring(id) == tostring(target) then
-					return true
-				end
-			end
-			return false
-		end
-		local gameIds, placeIds = data.gameIds or {}, data.placeIds or {}
-		if
-			(#gameIds > 0 and not matches(gameIds, game.GameId))
-			or (#gameIds == 0 and #placeIds > 0 and not matches(placeIds, game.PlaceId))
-		then
-			return false, "Game does not match the configured loader."
-		end
-		local loader = self.Options.AutoLoadCallback
-		if self.LoaderRan then
-			return false, "Loader already ran for this window."
-		end
-		self.LoaderRan = true
-		local ok, message
-		if type(loader) == "function" then
-			ok, message = pcall(loader, data)
-		else
-			ok, message = self.Storage:RunLoader(data.loaderUrl or data.LoaderUrl)
-		end
-		if not ok then
-			self.LoaderRan = false
-		end
-		if ok then
-			self:QueueAutoLoad(data)
-		end
-		return ok, message
+		self.LoadSettings = enabled == true
+		return self:_commit()
 	end
 
 	function Config:GetConfigFolder()
@@ -1057,7 +1042,7 @@ end]=],
 		return self.AutoSave
 	end
 	function Config:GetAutoLoad()
-		return self.AutoLoad
+		return self.AutoLoader:GetEnabled()
 	end
 	function Config:Destroy()
 		self.Scope:Destroy()

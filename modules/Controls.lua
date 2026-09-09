@@ -3,6 +3,7 @@ return function(require)
 
 	local Core = require("Core")
 	local Icons = require("Icons")
+	local Text = require("Text")
 
 	local Controls = {}
 
@@ -62,7 +63,7 @@ return function(require)
 		local instance = Core.new("TextButton", {
 			Name = "Action",
 			Size = UDim2.fromOffset(width or 88, control.Window.Theme.ControlHeight),
-			Text = text or "",
+			Text = if control.RawText then tostring(text or "") else Text.display(text),
 			AutoButtonColor = false,
 			BorderSizePixel = 0,
 			TextSize = control.Window.Theme.BodySize,
@@ -170,7 +171,8 @@ return function(require)
 			BackgroundTransparency = 1,
 			LayoutOrder = 0,
 		}, root)
-		local title = Core.text(window, header, options.Name or options.Title or "", window.Theme.BodySize)
+		local title =
+			Core.text(window, header, options.Name or options.Title or "", window.Theme.BodySize, nil, options.RawText)
 		Core.bind(window, title, "TextSize", "BodySize")
 		local titleInset = if options.Icon then 22 else 0
 		title.Position = UDim2.fromOffset(titleInset, 0)
@@ -194,6 +196,7 @@ return function(require)
 			Configurable = options.Configurable ~= false,
 			Persist = options.Persist ~= false and options.Configurable ~= false,
 			TooltipText = options.Tooltip,
+			RawText = options.RawText == true,
 		}
 		if control.ConfigKey then
 			root:SetAttribute("ConfigKey", tostring(control.ConfigKey))
@@ -295,7 +298,7 @@ return function(require)
 			Name = "Input",
 			Size = UDim2.new(1, 0, 0, control.Window.Theme.ControlHeight),
 			Text = "",
-			PlaceholderText = placeholder or "",
+			PlaceholderText = if control.RawText then tostring(placeholder or "") else Text.display(placeholder),
 			ClearTextOnFocus = false,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextSize = control.Window.Theme.BodySize,
@@ -915,7 +918,7 @@ return function(require)
 			for _, choice in ipairs(choices) do
 				local active = activeChoice(choice)
 				if active then
-					table.insert(labels, tostring(choice))
+					table.insert(labels, if control.RawText then tostring(choice) else Text.display(choice))
 				end
 				local row = rows[choice]
 				if row then
@@ -1212,7 +1215,7 @@ return function(require)
 			for index, choice in ipairs(choices) do
 				local row = Core.new("TextButton", {
 					Name = tostring(choice),
-					Text = tostring(choice),
+					Text = if control.RawText then tostring(choice) else Text.display(choice),
 					TextXAlignment = Enum.TextXAlignment.Left,
 					TextSize = window.Theme.BodySize,
 					Font = window.Theme.Font,
@@ -1522,13 +1525,15 @@ return function(require)
 		local control = shell(container, options)
 		control.Header.Size = UDim2.new(1, 0, 0, control.Window.Theme.BodySize + 8)
 		local valueMode = options.Value ~= nil
+		local rawValue = tostring(if valueMode then options.Value else options.Name or options.Title or "")
 		control.Title.Size = UDim2.new(if valueMode then 0.55 else 1, -control.TitleInset, 1, 0)
 		local value = Core.text(
 			control.Window,
 			control.Header,
 			tostring(options.Value or ""),
 			control.Window.Theme.BodySize,
-			"TextSecondary"
+			"TextSecondary",
+			true
 		)
 		value.AnchorPoint = Vector2.new(1, 0)
 		value.Position = UDim2.fromScale(1, 0)
@@ -1536,14 +1541,15 @@ return function(require)
 		value.TextXAlignment = Enum.TextXAlignment.Right
 		value.TextTruncate = Enum.TextTruncate.AtEnd
 		function control:Set(nextValue)
+			rawValue = tostring(nextValue or "")
 			if valueMode then
-				value.Text = tostring(nextValue or "")
+				value.Text = rawValue
 			else
-				self.Title.Text = tostring(nextValue or "")
+				self.Title.Text = if control.RawText then rawValue else Text.display(rawValue)
 			end
 		end
 		function control:Get()
-			return if valueMode then value.Text else self.Title.Text
+			return rawValue
 		end
 		return finish(container, control, options, "Label")
 	end

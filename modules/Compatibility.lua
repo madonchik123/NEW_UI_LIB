@@ -111,6 +111,25 @@ return function(require)
 			or options.Flag
 			or ((container._legacyPath or (container.Page and container.Page.Name) or "UI") .. "." .. options.Name)
 		options.Flag = options.ConfigKey
+		if options.SaveKey == false then
+			options.Persist = false
+		end
+		options.Aliases = table.clone(options.Aliases or {})
+		local function alias(value)
+			if value and value ~= options.ConfigKey and not table.find(options.Aliases, value) then
+				table.insert(options.Aliases, value)
+			end
+		end
+		if (raw or {}).SaveKey == nil and (raw or {}).ConfigKey == nil and (raw or {}).Flag == nil then
+			if container._legacySectionName then
+				alias(container._legacySectionName .. "." .. options.Name)
+			end
+			if container._legacyParentControl then
+				local childName = container._legacyParentControl .. "_" .. options.Name
+				alias(container._legacySectionPath .. "." .. childName)
+				alias(container._legacySectionName .. "." .. childName)
+			end
+		end
 		options.Increment = options.Step or options.Increment
 		local precision = options.Precision or options.Decimals or options.Decimal
 		if not options.Increment and precision then
@@ -679,6 +698,13 @@ return function(require)
 						options.ConfigKey
 					)
 					Core.list(branch.Body, self.Window.Theme.Gap / 2)
+					branch._legacySectionPath = self._legacySectionPath
+						or self._legacyPath
+						or ((self.Page and self.Page.Name or "UI") .. "." .. (self.Name or "Section"))
+					branch._legacySectionName = self._legacySectionName or self.Name or "Section"
+					branch._legacyParentControl = self._legacyParentControl
+							and (self._legacyParentControl .. "_" .. options.Name)
+						or options.Name
 					Core.pad(branch.Body, 6)
 					branch.Root.Visible = toggle:Get()
 					branch.Reveal = function()
@@ -766,6 +792,8 @@ return function(require)
 				(self._legacyPath or self.Name or "Menu") .. "." .. name
 			)
 			section._title = section.Root:FindFirstChild("Header"):FindFirstChild("Text")
+			section._legacySectionPath = (self._legacyPath or self.Name or "Menu") .. "." .. name
+			section._legacySectionName = name
 			section.TitleLabel = section._title
 			self.Sections = self.Sections or {}
 			table.insert(self.Sections, section)

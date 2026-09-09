@@ -1,6 +1,7 @@
 return function(require)
 	local UserInputService = game:GetService("UserInputService")
 	local Core = require("Core")
+	local Text = require("Text")
 	local Tooltips = {}
 	Tooltips.__index = Tooltips
 
@@ -78,7 +79,7 @@ return function(require)
 					return
 				end
 				local label = self.Label
-				label.Text = tostring(content or "")
+				label.Text = Text.display(content)
 				local position = target.AbsolutePosition - self.Window.Gui.AbsolutePosition
 				local viewport = self.Window.Gui.AbsoluteSize
 				local width = math.min(280, #label.Text * 6 + 16)

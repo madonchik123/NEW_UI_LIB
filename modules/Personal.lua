@@ -1,5 +1,6 @@
 return function(require)
 	local Players = game:GetService("Players")
+	local Fonts = require("Fonts")
 	local Personal = {}
 	local function compact(card, gap)
 		card.Body.UIListLayout.Padding = UDim.new(0, gap or 0)
@@ -89,20 +90,12 @@ return function(require)
 		local font = fontTab:Dropdown({
 			Name = "Font",
 			Preference = true,
-			Options = { "Builder Sans", "Gotham", "Code" },
-			Default = "Builder Sans",
+			Options = Fonts.Options,
+			Default = Fonts.name(window.Theme.Font),
 			Callback = function(value)
 				window:SetTheme({
-					Font = ({
-						["Builder Sans"] = Enum.Font.BuilderSans,
-						Gotham = Enum.Font.Gotham,
-						Code = Enum.Font.Code,
-					})[value],
-					FontBold = ({
-						["Builder Sans"] = Enum.Font.BuilderSansBold,
-						Gotham = Enum.Font.GothamBold,
-						Code = Enum.Font.Code,
-					})[value],
+					Font = Fonts.resolve(value),
+					FontBold = Fonts.resolve(value, true),
 				})
 			end,
 		})
@@ -144,7 +137,7 @@ return function(require)
 			blur:Set(true)
 			reducedMotion:Set(false)
 			scale:Set(1)
-			font:Set("Builder Sans")
+			font:Set("Roboto")
 			preset:Set("Unknown Hub")
 			for token, control in pairs(colorControls) do
 				control:Set(defaultColors[token])
@@ -153,8 +146,8 @@ return function(require)
 			defaults.WindowTransparency = 0.28
 			defaults.PanelTransparency = 0
 			defaults.AnimationSpeed = 0.16
-			defaults.Font = Enum.Font.BuilderSans
-			defaults.FontBold = Enum.Font.BuilderSansBold
+			defaults.Font = Fonts.resolve("Roboto")
+			defaults.FontBold = Fonts.resolve("Roboto", true)
 			window:SetTheme(defaults)
 			window:SetBlur(true)
 			window:SetScale(1)
@@ -211,13 +204,18 @@ return function(require)
 		})
 		local configuration = appearanceRight:Card({ Title = "Configuration", Icon = "save" })
 		local config = window.Config
-		local autoLoad = configuration:Toggle({
+		local autoLoad
+		autoLoad = configuration:Toggle({
 			Name = "Auto load UI",
 			Default = true,
 			Persist = false,
-			Tooltip = "Restore your active configuration and interface preferences on startup",
+			Tooltip = "Automatically reopen the supported game script after teleporting",
 			Callback = function(value)
-				config:SetAutoLoad(value)
+				local _, ok, message = config:SetAutoLoadEnabled(value)
+				if not ok and window.Scope.Alive then
+					autoLoad:Set(config:GetAutoLoad(), true)
+					window:Notify({ Title = "Auto load UI", Text = message, Type = "error" })
+				end
 			end,
 		})
 		local autoSave = configuration:Toggle({
@@ -307,14 +305,7 @@ return function(require)
 			opacity:Set((1 - window.Theme.WindowTransparency) * 100, true)
 			panelOpacity:Set((1 - window.Theme.PanelTransparency) * 100, true)
 			reducedMotion:Set(window.Theme.AnimationSpeed == 0, true)
-			local fontName = ({
-				[Enum.Font.BuilderSans] = "Builder Sans",
-				[Enum.Font.Gotham] = "Gotham",
-				[Enum.Font.Code] = "Code",
-			})[window.Theme.Font]
-			if fontName then
-				font:Set(fontName, true)
-			end
+			font:Set(Fonts.name(window.Theme.Font), true)
 		end, appearance)
 		presets:Button({
 			Name = "Save theme",
@@ -344,6 +335,7 @@ return function(require)
 			ThemeTabs = themeTabs,
 			Colors = colorControls,
 			Scale = scale,
+			Font = font,
 			ReducedMotion = reducedMotion,
 			ProfileDescription = profileDescription,
 			StatusText = statusText,

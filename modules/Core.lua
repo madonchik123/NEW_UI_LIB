@@ -1,6 +1,8 @@
 return function(require)
 	local TweenService = game:GetService("TweenService")
 	local UserInputService = game:GetService("UserInputService")
+	local Text = require("Text")
+	local Fonts = require("Fonts")
 
 	local Core = {}
 
@@ -63,10 +65,19 @@ return function(require)
 		return scope
 	end
 
+	function Core.assign(instance, property, value)
+		if property == "Font" or property == "FontFace" then
+			value = assert(Fonts.resolve(value), "Expected a Font or Enum.Font")
+			instance[if typeof(value) == "Font" then "FontFace" else "Font"] = value
+		else
+			instance[property] = value
+		end
+	end
+
 	function Core.new(className, properties, parent)
 		local instance = Instance.new(className)
 		for property, value in pairs(properties or {}) do
-			instance[property] = value
+			Core.assign(instance, property, value)
 		end
 		instance.Parent = parent
 		return instance
@@ -84,6 +95,7 @@ return function(require)
 					tween:Cancel()
 					tween:Destroy()
 					window.Tweens[instance] = nil
+					window.TweenGoals[instance] = nil
 				end
 			end)
 		end
@@ -92,7 +104,7 @@ return function(require)
 		if property == "CornerRadius" then
 			value = UDim.new(0, value)
 		end
-		instance[property] = value
+		Core.assign(instance, property, value)
 	end
 
 	function Core.round(instance, window, token)
@@ -108,12 +120,12 @@ return function(require)
 		return stroke
 	end
 
-	function Core.text(window, parent, value, size, token)
+	function Core.text(window, parent, value, size, token, rawText)
 		local label = Core.new("TextLabel", {
 			Name = "Text",
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			Text = tostring(value or ""),
+			Text = if rawText then tostring(value or "") else Text.display(value),
 			TextSize = size or window.Theme.BodySize,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextYAlignment = Enum.TextYAlignment.Center,
@@ -155,6 +167,7 @@ return function(require)
 					current:Cancel()
 					current:Destroy()
 					window.Tweens[instance] = nil
+					window.TweenGoals[instance] = nil
 				end
 			end)
 		end
@@ -173,9 +186,11 @@ return function(require)
 			properties
 		)
 		window.Tweens[instance] = tween
+		window.TweenGoals[instance] = properties
 		tween.Completed:Once(function()
 			if window.Tweens[instance] == tween then
 				window.Tweens[instance] = nil
+				window.TweenGoals[instance] = nil
 			end
 			tween:Destroy()
 		end)

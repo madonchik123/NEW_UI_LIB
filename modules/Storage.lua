@@ -128,6 +128,40 @@ return function(require)
 		return nil
 	end
 
+	local function getQueueFunction()
+		if type(queue_on_teleport) == "function" then
+			return queue_on_teleport
+		end
+		if type(queueonteleport) == "function" then
+			return queueonteleport
+		end
+		if type(syn) == "table" then
+			if type(syn.queue_on_teleport) == "function" then
+				return syn.queue_on_teleport
+			end
+			if type(syn.queueonteleport) == "function" then
+				return syn.queueonteleport
+			end
+		end
+		if type(fluxus) == "table" and type(fluxus.queue_on_teleport) == "function" then
+			return fluxus.queue_on_teleport
+		end
+		return nil
+	end
+
+	local function executorState(caps)
+		if type(caps.RuntimeState) == "table" then
+			return caps.RuntimeState
+		end
+		if type(getgenv) == "function" then
+			local ok, value = pcall(getgenv)
+			if ok and type(value) == "table" then
+				return value
+			end
+		end
+		return type(_G) == "table" and _G or {}
+	end
+
 	local function capabilities(options)
 		if options.Capabilities then
 			assert(type(options.Capabilities) == "table", "Capabilities must be a table")
@@ -144,7 +178,7 @@ return function(require)
 			request = getRequestFunction(),
 			loadstring = loadstring,
 			gethwid = readFingerprint,
-			queue_on_teleport = queue_on_teleport or queueonteleport,
+			queue_on_teleport = getQueueFunction(),
 		}
 	end
 
@@ -190,10 +224,17 @@ return function(require)
 	function Storage.new(options)
 		options = options or {}
 		local caps = capabilities(options)
+		local runtimeState = executorState(caps)
+		if type(runtimeState.__UI_LIBDataLocks) ~= "table" then
+			runtimeState.__UI_LIBDataLocks = {}
+		end
 		local folder = options.ConfigFolder or "UI_LIB"
 		assert(safeName(folder), "ConfigFolder must be a simple folder name")
 		return setmetatable({
 			Capabilities = caps,
+			RuntimeState = runtimeState,
+			DataLocks = runtimeState.__UI_LIBDataLocks,
+			DataNamespace = "executor:" .. folder,
 			Folder = folder,
 			Backend = "Executor files",
 			Persistent = false,
@@ -462,6 +503,73 @@ return function(require)
 			})
 		end
 		return true, games
+	end
+
+	function Storage:ReadLegacy(name)
+		if not self.Alive then
+			return false, "Storage was destroyed."
+		end
+		if
+			type(name) ~= "string"
+			or #name > 80
+			or not (
+				name == "key"
+				or name == "autoload"
+				or name == "universal"
+				or name:match("^game_%d+$")
+				or name:match("^place_%d+$")
+			)
+		then
+			return false, "Unsupported legacy file name."
+		end
+		local caps = self.Capabilities
+		if type(caps.readfile) ~= "function" then
+			return false, "Executor readfile capability is unavailable."
+		end
+		local config = name ~= "key" and name ~= "autoload"
+		local paths = { "UnknownHub/" .. name .. ".json" }
+		if config then
+			table.insert(paths, paths[1] .. ".bak")
+			table.insert(paths, "UnknownHub_" .. name .. ".json")
+			table.insert(paths, "UnknownHub_" .. name .. ".json.bak")
+		end
+		local invalid = false
+		for _, path in ipairs(paths) do
+			local exists = true
+			if type(caps.isfile) == "function" then
+				local checked, present = pcall(caps.isfile, path)
+				if not self.Alive then
+					return false, "Storage was destroyed."
+				end
+				if not checked then
+					return false, "Unable to inspect legacy file."
+				end
+				exists = present == true
+			end
+			if exists then
+				local read, raw = pcall(caps.readfile, path)
+				if not self.Alive then
+					return false, "Storage was destroyed."
+				end
+				if not read or type(raw) ~= "string" then
+					invalid = true
+				elseif #raw > Storage.MaxBytes then
+					invalid = true
+				elseif not config then
+					return true, raw, path
+				else
+					local decoded, value = pcall(HttpService.JSONDecode, HttpService, raw)
+					if decoded and type(value) == "table" then
+						return true, raw, path
+					end
+					invalid = true
+				end
+			end
+		end
+		if invalid then
+			return false, "Legacy file could not be read safely; original files were preserved."
+		end
+		return true, nil
 	end
 
 	function Storage:Destroy()
