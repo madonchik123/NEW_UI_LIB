@@ -1,0 +1,34 @@
+return function(require)
+	local Theme = {
+		Background = Color3.fromRGB(13, 14, 19),
+		Sidebar = Color3.fromRGB(17, 18, 23),
+		Surface = Color3.fromRGB(20, 22, 28),
+		SurfaceHover = Color3.fromRGB(31, 34, 42),
+		SurfaceActive = Color3.fromRGB(43, 48, 59),
+		Border = Color3.fromRGB(43, 46, 55),
+		Text = Color3.fromRGB(231, 234, 239),
+		TextSecondary = Color3.fromRGB(166, 174, 187),
+		TextMuted = Color3.fromRGB(119, 129, 144),
+		Accent = Color3.fromRGB(117, 185, 204),
+		Success = Color3.fromRGB(133, 196, 157),
+		Warning = Color3.fromRGB(219, 184, 117),
+		Error = Color3.fromRGB(218, 134, 143),
+		Font = Enum.Font.BuilderSans,
+		FontBold = Enum.Font.BuilderSansBold,
+		Radius = 8,
+		BorderSize = 1,
+		Padding = 9,
+		MainPadding = 12,
+		Gap = 6,
+		HeaderHeight = 42,
+		SidebarWidth = 142,
+		NavHeight = 30,
+		BodySize = 11,
+		ControlHeight = 26,
+		WindowTransparency = 0.28,
+		PanelTransparency = 0,
+		AnimationSpeed = 0.16,
+	}
+
+	return Theme
+end

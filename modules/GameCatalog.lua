@@ -1,0 +1,21 @@
+return function(require)
+	local HttpService = game:GetService("HttpService")
+	local GameCatalog = {}
+	GameCatalog.Url = "https://unknownhub.win/api/games"
+	GameCatalog.Snapshot = HttpService:JSONDecode(
+		[====[{"games": [{"gameId": "10148749921", "name": "[2nd FLOOR] Animal Hospital (Anomaly) 🧪", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-06b6e0dc95a0b41b65a1bf6dd6e63a18/150/150/Image/Png/noFilter"}, {"gameId": "9348272796", "name": "[RAIDS] Survive Zombie Arena", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-57539d61184222ebefcfc3e0204d101b/150/150/Image/Png/noFilter"}, {"gameId": "9584852943", "name": "[X8] +1 Speed Keyboard Escape | Candy & Chocolate", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2fa54a08391b8fca3192019d2da3f966/150/150/Image/Png/noFilter"}, {"gameId": "7613921865", "name": "[🌘] Anime Expeditions", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b1c03366217dbe19df941a4746527af6/150/150/Image/Png/noFilter"}, {"gameId": "10039338037", "name": "[🌽] Build A Ring Farm", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a649838c10d14331168f2fdbb8c2607e/150/150/Image/Png/noFilter"}, {"gameId": "10004244222", "name": "[🌍] Kick a Lucky Block", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-b2845d659b6895fd3a4b025bafaa9f11/150/150/Image/Png/noFilter"}, {"gameId": "9001634416", "name": "Roblox Game 9001634416", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a8c11bb5ea0deac91477e8a1418b0f30/150/150/Image/Png/noFilter"}, {"gameId": "98371023930528", "name": "Roblox Game 98371023930528", "status": "Live", "thumbnailUrl": ""}, {"gameId": "10376944238", "name": "Build Your Backrooms", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-956a35cd340db42e3e8281a86ad6de4f/150/150/Image/Png/noFilter"}, {"gameId": "8841437826", "name": "Capybaras VS Plants", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-a53e4d63dc9055baa70e737d5ca1c331/150/150/Image/Png/noFilter"}, {"gameId": "5750914919", "name": "Fisch 🍉 [SKYCREST]", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-e4a60be5e47f439d81ba79b6b3e96963/150/150/Image/Png/noFilter"}, {"gameId": "10200395747", "name": "Grow a Garden 2", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-076fa0b396f5eac77ef9bb004dac1842/150/150/Image/Png/noFilter"}, {"gameId": "66654135", "name": "Murder Mystery 2", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-3ac5af325970a745b0156a5358174169/150/150/Image/Png/noFilter"}, {"gameId": "7395930870", "name": "Sell Lemons 🍋", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-9ef4afdd6802d8603c5c839236402f3e/150/150/Image/Png/noFilter"}, {"gameId": "9792947201", "name": "Slime RNG", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-2f7978b674aeb4273e19ba6fa25bb846/150/150/Image/Png/noFilter"}, {"gameId": "7709344486", "name": "Steal a Brainrot", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-3667d0771df111ea4c7f81a2d221713d/150/150/Image/Png/noFilter"}, {"gameId": "10563114921", "name": "Steal An Egg", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-856231c847a8d9709e23979c56c38c3a/150/150/Image/Png/noFilter"}, {"gameId": "3808081382", "name": "The Strongest Battlegrounds", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-68c92fc62a8753793f7963e146b5197f/150/150/Image/Png/noFilter"}, {"gameId": "10405010493", "name": "Wash The House 🧼", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-cb38b3527d1aac1088342cb5c901828a/150/150/Image/Png/noFilter"}, {"gameId": "3317771874", "name": "🕹️ [ARCADE] Pet Simulator 99! 💰", "status": "Live", "thumbnailUrl": "https://tr.rbxcdn.com/180DAY-bf751ad783834bfa9ccca4610a5b912d/150/150/Image/Png/noFilter"}]}]====]
+	).games
+	function GameCatalog.rows(games)
+		local rows = {}
+		for _, item in ipairs(games) do
+			table.insert(rows, {
+				Name = item.name,
+				Status = item.status == "Live" and "Success" or "Warning",
+				Tooltip = item.name .. " · " .. item.status,
+				GameId = item.gameId,
+			})
+		end
+		return rows
+	end
+	return GameCatalog
+end
