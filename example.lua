@@ -1,50 +1,10 @@
-local function getRequestFunction()
-	if type(request) == "function" then
-		return request
-	end
-	if type(http_request) == "function" then
-		return http_request
-	end
-	if type(http) == "table" and type(http.request) == "function" then
-		return http.request
-	end
-	if type(syn) == "table" and type(syn.request) == "function" then
-		return syn.request
-	end
-	if type(fluxus) == "table" and type(fluxus.request) == "function" then
-		return fluxus.request
-	end
-	return nil
-end
-
-local function normalizeResponse(response)
-	if type(response) == "string" then
-		return { StatusCode = 200, Body = response }
-	end
-	if type(response) ~= "table" then
-		return nil
-	end
-	return {
-		StatusCode = tonumber(response.StatusCode or response.Status or response.status_code or response.status) or 0,
-		Body = response.Body or response.body or response.ResponseBody,
-	}
-end
-
-local requestFunction = getRequestFunction()
-assert(type(requestFunction) == "function", "The executor request capability is unavailable.")
-assert(type(loadstring) == "function", "The executor loadstring capability is unavailable.")
-local response = normalizeResponse(requestFunction({
-	Url = "https://raw.githubusercontent.com/madonchik123/NEW_UI_LIB/executor/UI_LIB.lua",
-	Method = "GET",
-}))
-local status = type(response) == "table" and tonumber(response.StatusCode)
-assert(status and status >= 200 and status < 300 and type(response.Body) == "string", "Unable to download UI_LIB.")
-local Library = assert(loadstring(response.Body))()
-local Window = Library:CreateApp({
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local App = require(ReplicatedStorage:WaitForChild("UI_LIB_App"))
+local Window = App.mount({
 	Name = "Unknown Hub",
 	Title = "Unknown Hub",
-	KeySystem = true,
-	UnknownHubKeySystem = true,
+	KeySystem = false,
+	UnknownHubKeySystem = false,
 	UnknownHubProjectId = "54474b4c5d5a4f459909c4cb70e7b4f3",
 	GetKeyLink = "https://unknownhub.win/#get-key",
 	ConfigName = "unknown_hub",
@@ -73,6 +33,3 @@ Filters:AddInputBox({ Name = "Name filter", Placeholder = "Type a name..." })
 General:AddColorPicker({ Name = "Marker color", Default = Color3.fromRGB(117, 185, 204), Transparency = true })
 Window.App.Overview:Select()
 Window.Config:Initialize()
-Window:ConfigureAutoLoad({
-	loaderUrl = "https://raw.githubusercontent.com/madonchik123/NEW_UI_LIB/executor/example.lua",
-})
