@@ -105,7 +105,7 @@ function App.mount(options)
 		Default = "Minimal",
 		Callback = function(value)
 			markerText.TextStrokeTransparency = value == "Outlined" and 0.25 or 1
-			markerText.Font = value == "Bold" and Enum.Font.BuilderSansBold or window.Theme.Font
+			Core.bind(window, markerText, "Font", value == "Bold" and "FontBold" or "Font")
 		end,
 	})
 

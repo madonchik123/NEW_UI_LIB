@@ -1,5 +1,6 @@
 local Core = require(script.Core)
 local Theme = require(script.Theme)
+local Fonts = require(script.Fonts)
 local Window = require(script.Window)
 local Icons = require(script.Icons)
 local Config = require(script.Config)
@@ -12,6 +13,8 @@ local Containers = require(script.Containers)
 local Overview = require(script.Overview)
 local ThemeAliases = require(script.ThemeAliases)
 local LegacyHost = require(script.LegacyHost)
+local AutoLoad = require(script.AutoLoad)
+local Storage = require(script.Storage)
 
 local Library = {
 	Theme = table.clone(Theme),
@@ -32,11 +35,23 @@ function Library.new(options)
 	local success, result = xpcall(function()
 		local theme = table.clone(Library.Theme)
 		for token, value in pairs(Library.Config) do
-			if theme[token] ~= nil and typeof(theme[token]) == typeof(value) then
+			if token == "Font" or token == "FontBold" then
+				local font = Fonts.resolve(value)
+				if font then
+					theme[token] = font
+				end
+			elseif theme[token] ~= nil and typeof(theme[token]) == typeof(value) then
 				theme[token] = value
 			end
 		end
-		theme.FontBold = Library.Config.FontSemiBold or Library.Config.FontMedium or theme.FontBold
+		local bold = Fonts.resolve(Library.Config.FontBold)
+			or Fonts.resolve(Library.Config.FontSemiBold)
+			or Fonts.resolve(Library.Config.FontMedium)
+		if bold then
+			theme.FontBold = bold
+		elseif Fonts.resolve(Library.Config.Font) then
+			theme.FontBold = Fonts.bold(theme.Font)
+		end
 		local window = Window.new(options, theme, scope)
 		window.Library = Library
 		window.Config = Config.new(window, options)
@@ -101,6 +116,9 @@ function Library.new(options)
 	if options.AutoInitialize ~= false then
 		Core.delay(scope, 0, function()
 			result.Config:Initialize()
+			if scope.Alive then
+				result.KeySystem:Initialize()
+			end
 		end)
 	end
 	windows[name] = result
@@ -126,6 +144,15 @@ end
 
 function Library:SetTheme(patch)
 	patch = ThemeAliases.patch(patch)
+	if patch.Font ~= nil then
+		patch.Font = assert(Fonts.resolve(patch.Font), "Invalid theme font")
+		if patch.FontBold == nil then
+			patch.FontBold = Fonts.bold(patch.Font)
+		end
+	end
+	if patch.FontBold ~= nil then
+		patch.FontBold = assert(Fonts.resolve(patch.FontBold), "Invalid heading font")
+	end
 	for key, value in pairs(patch) do
 		self.Theme[key] = value
 	end
@@ -226,6 +253,38 @@ end
 
 Compatibility.install(Library, Window, Containers)
 Library._defaultSaveConfig = Library.SaveConfig
+
+local function autoLoadOperation(library, method, ...)
+	local window = library._activeWindow
+	if window and window.Scope.Alive then
+		return window.Config.AutoLoader[method](window.Config.AutoLoader, ...)
+	end
+	local scope = Core.scope()
+	local options = table.clone(library.Config)
+	options.BootstrapUrl = library.AutoLoadBootstrapUrl
+	local storage = Storage.new(options)
+	scope:Add(storage)
+	local manager = AutoLoad.new(storage, scope, options)
+	local result = table.pack(pcall(manager[method], manager, ...))
+	scope:Destroy()
+	if not result[1] then
+		error(result[2], 2)
+	end
+	return table.unpack(result, 2, result.n)
+end
+
+function Library:ConfigureAutoLoad(options)
+	return autoLoadOperation(self, "Configure", options)
+end
+function Library:SetAutoLoadEnabled(enabled, options)
+	return autoLoadOperation(self, "SetEnabled", enabled, options)
+end
+function Library:QueueAutoLoad(data)
+	return autoLoadOperation(self, "Queue", data)
+end
+function Library:RunAutoLoad(data)
+	return autoLoadOperation(self, "Run", data)
+end
 
 function Library:SetThemeValue(token, value, persist)
 	self:SetTheme({ [token] = value })

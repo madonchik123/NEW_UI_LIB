@@ -31,6 +31,8 @@ function KeySystem.new(window, options)
 		Listeners = {},
 		Generation = 0,
 		LastAttempt = -math.huge,
+		CacheEnabled = options.CacheKey ~= false and options.SaveKey ~= false,
+		AutoVerifyStarted = false,
 		Link = options.GetKeyLink or options.KeyLink or "https://unknownhub.win/#get-key",
 	}, KeySystem)
 	scope:Add(function()
@@ -43,6 +45,26 @@ function KeySystem.new(window, options)
 			storage:Destroy()
 		end
 	end)
+	local config = window.Config
+	if enabled and self.CacheEnabled and options.AutoVerifyKey ~= false and config then
+		local pending = false
+		config:Subscribe(scope, function(state)
+			if
+				(state.State ~= "ready" and state.State ~= "loaded")
+				or pending
+				or self.AutoVerifyStarted
+				or not config.Initialized
+				or config.ReadFailed
+			then
+				return
+			end
+			pending = true
+			Core.delay(scope, 0, function()
+				pending = false
+				self:Initialize()
+			end)
+		end)
+	end
 	return self
 end
 
@@ -80,15 +102,69 @@ function KeySystem:GetKeyLink()
 end
 
 function KeySystem:GetCachedKey()
-	if self.Options.CacheKey ~= true and self.Options.SaveKey ~= true then
+	if not self.CacheEnabled or not self.Scope.Alive then
 		return ""
 	end
 	local config = self.Window.Config
-	local record = config and config:ReadData("__unknownhub_key_system")
-	if type(record) == "table" then
-		return text(record.key)
+	if not config or not config.Initialized or config.ReadFailed then
+		return ""
+	end
+	local record = config:ReadData("__unknownhub_key_system")
+	local key = text(if type(record) == "table" then record.key or record.value else record)
+	if #key <= 512 and not key:find("%c") then
+		return key
 	end
 	return ""
+end
+
+function KeySystem:_prepareCache()
+	local config = self.Window.Config
+	if not self.CacheEnabled or not config then
+		return false, "Key caching is disabled."
+	end
+	while self.Scope.Alive and config.Busy do
+		task.wait()
+	end
+	if not self.Scope.Alive then
+		return false, "Verification was cancelled."
+	end
+	if not config.Initialized or config.ReadFailed then
+		local called, initialized, message = pcall(config.Initialize, config)
+		if not called or not initialized then
+			return false, called and message or "Key storage could not be initialized."
+		end
+	end
+	if not self.Scope.Alive then
+		return false, "Verification was cancelled."
+	end
+	local read, _, message = pcall(config.ReadData, config, "__unknownhub_key_system")
+	if not read or message ~= nil then
+		return false, read and message or "Saved key could not be read."
+	end
+	return self.Scope.Alive and config.Initialized and not config.ReadFailed
+end
+
+function KeySystem:Initialize()
+	if not self.Scope.Alive or not self.Enabled or not self.CacheEnabled or self.Options.AutoVerifyKey == false then
+		return false, "Automatic key verification is disabled."
+	end
+	if self.AutoVerifyStarted or self.Busy or self.Verified or self.LastAttempt > -math.huge then
+		return false, "Key verification has already started."
+	end
+	self.AutoVerifyStarted = true
+	local ready, message = self:_prepareCache()
+	if not ready then
+		self.AutoVerifyStarted = false
+		return false, message
+	end
+	if self.Busy or self.Verified or self.LastAttempt > -math.huge then
+		return false, "Key verification has already started."
+	end
+	local key = self:GetCachedKey()
+	if key == "" then
+		return false, "No saved key."
+	end
+	return self:Verify(key)
 end
 
 function KeySystem:Verify(key)
@@ -117,6 +193,11 @@ function KeySystem:Verify(key)
 		return false, "Verification was cancelled."
 	end
 	local generation = self.Generation
+	local cacheReady, cacheMessage = self:_prepareCache()
+	if not self.Scope.Alive or generation ~= self.Generation then
+		self.Busy = false
+		return false, "Verification was cancelled."
+	end
 	local custom = self.Options.Verify
 	local function verify()
 		if type(custom) == "function" then
@@ -140,8 +221,8 @@ function KeySystem:Verify(key)
 		return self.Storage:VerifyKey(key, self.Options)
 	end
 	local callOk, accepted, message, metadata = pcall(verify)
-	self.Busy = false
 	if not self.Scope.Alive or generation ~= self.Generation then
+		self.Busy = false
 		return false, "Verification was cancelled."
 	end
 	if not callOk then
@@ -165,17 +246,36 @@ function KeySystem:Verify(key)
 			accepted, message = false, "Key unlock ticket has expired."
 		end
 	end
+	if accepted == true and metadata.noExpiry ~= true then
+		local remaining = tonumber(metadata.secondsRemaining)
+		local expiresAt = metadata.expiresAt
+		local expired = remaining ~= nil and remaining <= 0
+		if type(expiresAt) == "string" then
+			local parsed, timestamp = pcall(DateTime.fromIsoDate, expiresAt)
+			if parsed and timestamp and timestamp.UnixTimestamp <= os.time() then
+				expired = true
+			end
+		end
+		if expired then
+			accepted, message = false, "Key has expired."
+		end
+	end
 	self.Verified = accepted == true
 	self.Message = type(message) == "string" and message or (self.Verified and "Key accepted." or "Invalid key.")
 	if self.Verified then
 		self.Key, self.Metadata = key, metadata
 		self.MetadataReceivedAt = os.clock()
-		if self.Options.CacheKey == true or self.Options.SaveKey == true then
+		if self.CacheEnabled then
 			local config = self.Window.Config
-			if config then
-				local saved, cacheMessage =
-					config:WriteData("__unknownhub_key_system", { key = key, ticket = metadata.ticket })
-				metadata.CacheSaved = saved == true
+			if cacheReady then
+				cacheReady, cacheMessage = self:_prepareCache()
+			end
+			if cacheReady and config then
+				local called, saved, message = pcall(config.WriteData, config, "__unknownhub_key_system", { key = key })
+				metadata.CacheSaved = called and saved == true
+				metadata.CacheMessage = called and message or "Key could not be saved."
+			else
+				metadata.CacheSaved = false
 				metadata.CacheMessage = cacheMessage
 			end
 		end
@@ -186,6 +286,7 @@ function KeySystem:Verify(key)
 	else
 		self.Key, self.Metadata = nil, nil
 	end
+	self.Busy = false
 	self:_notify()
 	return self.Verified, self.Message, metadata
 end

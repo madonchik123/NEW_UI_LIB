@@ -1,5 +1,6 @@
 local Core = require(script.Parent.Core)
 local Icons = require(script.Parent.Icons)
+local Text = require(script.Parent.Text)
 
 local Search = {}
 
@@ -11,6 +12,9 @@ local function contextFor(window, object)
 		local name = registered and registered.Name
 		if name == "Theme tabs" then
 			name = nil
+		end
+		if name and not parent.RawText then
+			name = Text.display(name)
 		end
 		if name and names[1] ~= name then
 			table.insert(names, 1, name)
@@ -54,8 +58,9 @@ function Search.query(window, query)
 			end
 			table.insert(results, {
 				Object = object,
-				Name = entry.Name,
-				Description = entry.Description,
+				Name = if object.RawText then entry.Name else Text.display(entry.Name),
+				RawName = entry.Name,
+				Description = Text.display(entry.Description),
 				Context = context,
 				Score = score,
 			})
@@ -238,7 +243,7 @@ function Search.mount(window)
 			table.insert(buttons, button)
 			Core.bind(window, button, "BackgroundColor3", "SurfaceActive")
 			Core.round(button, window)
-			local label = Core.text(window, button, entry.Name, 12)
+			local label = Core.text(window, button, entry.Name, 12, nil, true)
 			Core.bind(window, label, "Font", "FontBold")
 			label.Position = UDim2.fromOffset(10, 3)
 			label.Size = UDim2.new(1, -33, 0, 18)

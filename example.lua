@@ -9,7 +9,6 @@ local Window = App.mount({
 	GetKeyLink = "https://unknownhub.win/#get-key",
 	ConfigName = "unknown_hub",
 	AutoSave = true,
-	AutoLoad = true,
 	AutoInitialize = false,
 	ToggleKey = Enum.KeyCode.RightShift,
 

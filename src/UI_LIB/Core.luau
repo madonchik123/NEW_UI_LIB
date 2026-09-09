@@ -1,5 +1,7 @@
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local Text = require(script.Parent.Text)
+local Fonts = require(script.Parent.Fonts)
 
 local Core = {}
 
@@ -62,10 +64,19 @@ function Core.scope(parent)
 	return scope
 end
 
+function Core.assign(instance, property, value)
+	if property == "Font" or property == "FontFace" then
+		value = assert(Fonts.resolve(value), "Expected a Font or Enum.Font")
+		instance[if typeof(value) == "Font" then "FontFace" else "Font"] = value
+	else
+		instance[property] = value
+	end
+end
+
 function Core.new(className, properties, parent)
 	local instance = Instance.new(className)
 	for property, value in pairs(properties or {}) do
-		instance[property] = value
+		Core.assign(instance, property, value)
 	end
 	instance.Parent = parent
 	return instance
@@ -83,6 +94,7 @@ function Core.bind(window, instance, property, token)
 				tween:Cancel()
 				tween:Destroy()
 				window.Tweens[instance] = nil
+				window.TweenGoals[instance] = nil
 			end
 		end)
 	end
@@ -91,7 +103,7 @@ function Core.bind(window, instance, property, token)
 	if property == "CornerRadius" then
 		value = UDim.new(0, value)
 	end
-	instance[property] = value
+	Core.assign(instance, property, value)
 end
 
 function Core.round(instance, window, token)
@@ -107,12 +119,12 @@ function Core.stroke(instance, window)
 	return stroke
 end
 
-function Core.text(window, parent, value, size, token)
+function Core.text(window, parent, value, size, token, rawText)
 	local label = Core.new("TextLabel", {
 		Name = "Text",
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
-		Text = tostring(value or ""),
+		Text = if rawText then tostring(value or "") else Text.display(value),
 		TextSize = size or window.Theme.BodySize,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
@@ -154,6 +166,7 @@ function Core.tween(window, instance, properties, duration)
 				current:Cancel()
 				current:Destroy()
 				window.Tweens[instance] = nil
+				window.TweenGoals[instance] = nil
 			end
 		end)
 	end
@@ -172,9 +185,11 @@ function Core.tween(window, instance, properties, duration)
 		properties
 	)
 	window.Tweens[instance] = tween
+	window.TweenGoals[instance] = properties
 	tween.Completed:Once(function()
 		if window.Tweens[instance] == tween then
 			window.Tweens[instance] = nil
+			window.TweenGoals[instance] = nil
 		end
 		tween:Destroy()
 	end)

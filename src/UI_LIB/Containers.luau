@@ -1,6 +1,7 @@
 local Core = require(script.Parent.Core)
 local Icons = require(script.Parent.Icons)
 local Controls = require(script.Parent.Controls)
+local Text = require(script.Parent.Text)
 local Container = {}
 Container.__index = Container
 
@@ -242,7 +243,7 @@ function Container:Card(options)
 	if options.Action then
 		local action = Core.new("TextButton", {
 			Name = "Action",
-			Text = options.Action.Text or "Open",
+			Text = Text.display(options.Action.Text or "Open"),
 			Font = window.Theme.Font,
 			TextSize = 11,
 			BackgroundTransparency = 1,
@@ -263,7 +264,7 @@ function Container:Card(options)
 		footer.Size = UDim2.new(1, 0, 0, 25)
 		footer.TextXAlignment = Enum.TextXAlignment.Center
 		function card:SetFooter(text)
-			footer.Text = tostring(text)
+			footer.Text = Text.display(text)
 		end
 	end
 	self:Register(card, options)
@@ -278,7 +279,7 @@ function Container:InfoRow(options)
 	local row = self:Custom({ Name = options.Name or "Info", Height = 17 })
 	local label = Core.text(self.Window, row.Body, options.Name, 11, "TextSecondary")
 	label.Size = UDim2.new(0.52, 0, 1, 0)
-	local value = Core.text(self.Window, row.Body, options.Value, 11)
+	local value = Core.text(self.Window, row.Body, options.Value, 11, nil, true)
 	value.Position = UDim2.fromScale(0.52, 0)
 	value.Size = UDim2.new(0.48, 0, 1, 0)
 	value.TextXAlignment = Enum.TextXAlignment.Right
@@ -385,7 +386,7 @@ function Container:Tabs()
 		local tab = make(owner.Window, content, content, tabs, owner.Page)
 		local button = Core.new("TextButton", {
 			Name = options.Name,
-			Text = options.Icon and "" or options.Name,
+			Text = options.Icon and "" or Text.display(options.Name),
 			TextSize = 11,
 			AutoButtonColor = false,
 			BackgroundTransparency = 1,

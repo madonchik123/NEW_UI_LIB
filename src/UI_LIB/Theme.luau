@@ -1,3 +1,5 @@
+local Fonts = require(script.Parent.Fonts)
+
 local Theme = {
 	Background = Color3.fromRGB(13, 14, 19),
 	Sidebar = Color3.fromRGB(17, 18, 23),
@@ -12,8 +14,8 @@ local Theme = {
 	Success = Color3.fromRGB(133, 196, 157),
 	Warning = Color3.fromRGB(219, 184, 117),
 	Error = Color3.fromRGB(218, 134, 143),
-	Font = Enum.Font.BuilderSans,
-	FontBold = Enum.Font.BuilderSansBold,
+	Font = Fonts.resolve("Roboto"),
+	FontBold = Fonts.resolve("Roboto", true),
 	Radius = 8,
 	BorderSize = 1,
 	Padding = 9,

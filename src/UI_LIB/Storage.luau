@@ -67,12 +67,52 @@ local function safeName(value)
 	return type(value) == "string" and #value > 0 and #value <= 80 and value:match("^[%w_%-]+$") ~= nil
 end
 
+local remoteQueues = setmetatable({}, { __mode = "k" })
+local nativeRuntimeState = {}
+local nativeDataLocks = {}
+
+local function drainRemote(remote, state)
+	while #state.Queue > 0 do
+		local ticket = table.remove(state.Queue, 1)
+		local writing = ticket.Action == "Write" or ticket.Action == "Delete"
+		local verifying = ticket.Action == "Verify"
+		local due = math.max(
+			state.LastRequest + 0.11,
+			writing and state.LastWrite + 2.05 or -math.huge,
+			verifying and state.LastVerify + 5.05 or -math.huge
+		)
+		while ticket.Owner.Alive and os.clock() < due do
+			task.wait(math.min(0.05, due - os.clock()))
+		end
+		if ticket.Owner.Alive then
+			local now = os.clock()
+			state.LastRequest = now
+			if writing then
+				state.LastWrite = now
+			end
+			if verifying then
+				state.LastVerify = now
+			end
+			ticket.Called, ticket.Response =
+				pcall(remote.InvokeServer, remote, ticket.Action, ticket.Key, ticket.Payload)
+		else
+			ticket.Called = false
+		end
+		ticket.Owner, ticket.Payload = nil, nil
+		ticket.Done = true
+	end
+	state.Running = false
+end
+
 function Storage.new(options)
 	options = options or {}
 	local folder = options.ConfigFolder or "UI_LIB"
 	assert(safeName(folder), "ConfigFolder must be a simple folder name")
 	return setmetatable({
 		Capabilities = {},
+		RuntimeState = nativeRuntimeState,
+		DataLocks = nativeDataLocks,
+		DataNamespace = options.StorageRemote or "UI_LIB_Storage",
 		Folder = folder,
 		Backend = "Roblox DataStore",
 		Persistent = false,
@@ -92,11 +132,32 @@ function Storage:_remote(action, key, payload)
 	if typeof(remote) ~= "Instance" or not remote:IsA("RemoteFunction") then
 		return false, "Native storage server is not installed."
 	end
-	local ok, response = pcall(remote.InvokeServer, remote, action, key, payload)
+	local state = remoteQueues[remote]
+	if not state then
+		state =
+			{ Queue = {}, Running = false, LastRequest = -math.huge, LastWrite = -math.huge, LastVerify = -math.huge }
+		remoteQueues[remote] = state
+	end
+	if #state.Queue >= 128 then
+		return false, "Too many pending storage operations."
+	end
+	local ticket = { Owner = self, Action = action, Key = key, Payload = payload, Done = false }
+	table.insert(state.Queue, ticket)
+	if not state.Running then
+		state.Running = true
+		task.spawn(drainRemote, remote, state)
+	end
+	while not ticket.Done do
+		if not self.Alive then
+			return false, "Storage was destroyed."
+		end
+		task.wait()
+	end
 	if not self.Alive then
 		return false, "Storage was destroyed."
 	end
-	if not ok or type(response) ~= "table" then
+	local response = ticket.Response
+	if not ticket.Called or type(response) ~= "table" then
 		return false, "Storage server request failed."
 	end
 	if response.Ok ~= true then
@@ -192,6 +253,26 @@ end
 
 function Storage:RunLoader(_url)
 	return false, "Runtime loaders are unavailable in Studio."
+end
+
+function Storage:ReadLegacy(name)
+	if not self.Alive then
+		return false, "Storage was destroyed."
+	end
+	if
+		type(name) ~= "string"
+		or #name > 80
+		or not (
+			name == "key"
+			or name == "autoload"
+			or name == "universal"
+			or name:match("^game_%d+$")
+			or name:match("^place_%d+$")
+		)
+	then
+		return false, "Unsupported legacy file name."
+	end
+	return true, nil
 end
 
 function Storage:Destroy()

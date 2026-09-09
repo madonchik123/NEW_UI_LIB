@@ -26,12 +26,24 @@ local function validKey(key)
 	return type(key) == "string" and #key > 0 and #key <= 80 and key:match("^[%w_%-]+$") ~= nil
 end
 
-local function validatePayload(raw)
+local function validatePayload(raw, storageKey)
 	if type(raw) ~= "string" or #raw > MAX_BYTES then
 		return false
 	end
 	local decoded, document = pcall(HttpService.JSONDecode, HttpService, raw)
-	if not decoded or type(document) ~= "table" or document.Version ~= 1 then
+	if not decoded then
+		return false
+	end
+	if storageKey == "key" then
+		local value = type(document) == "table" and (document.key or document.value) or document
+		if type(value) ~= "string" or #value == 0 or #value > 512 or value:find("%c") then
+			return false
+		end
+	elseif storageKey == "autoload" then
+		if type(document) ~= "table" or document.version ~= 1 or type(document.enabled) ~= "boolean" then
+			return false
+		end
+	elseif type(document) ~= "table" or document.Version ~= 1 then
 		return false
 	end
 	local nodes = 0
@@ -283,7 +295,7 @@ local function invoke(player, action, key, payload)
 	elseif action ~= "List" and action ~= "Games" and not validKey(key) then
 		return result(false, nil, "Invalid storage key.")
 	end
-	if action == "Write" and not validatePayload(payload) then
+	if action == "Write" and not validatePayload(payload, key) then
 		return result(false, nil, "Invalid or oversized configuration.")
 	end
 	if action == "Write" or action == "Delete" then

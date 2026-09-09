@@ -1,5 +1,6 @@
 local UserInputService = game:GetService("UserInputService")
 local Core = require(script.Parent.Core)
+local Text = require(script.Parent.Text)
 local Tooltips = {}
 Tooltips.__index = Tooltips
 
@@ -77,7 +78,7 @@ function Tooltips:Bind(target, value, scope)
 				return
 			end
 			local label = self.Label
-			label.Text = tostring(content or "")
+			label.Text = Text.display(content)
 			local position = target.AbsolutePosition - self.Window.Gui.AbsolutePosition
 			local viewport = self.Window.Gui.AbsoluteSize
 			local width = math.min(280, #label.Text * 6 + 16)

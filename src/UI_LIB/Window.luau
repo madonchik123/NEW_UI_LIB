@@ -2,6 +2,8 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Core = require(script.Parent.Core)
+local Text = require(script.Parent.Text)
+local Fonts = require(script.Parent.Fonts)
 local Icons = require(script.Parent.Icons)
 local Container = require(script.Parent.Containers)
 local Blur = require(script.Parent.Blur)
@@ -188,8 +190,8 @@ function Window:SelectPage(page)
 		Core.bind(self, other.Navigation, "BackgroundColor3", other == page and "SurfaceActive" or "Sidebar")
 		Core.tween(self, other.Navigation, { BackgroundTransparency = other == page and 0 or 1 })
 	end
-	self.Breadcrumb.Text = (page.Breadcrumb or self.Title) .. "  /  " .. page.Name
-	self.Subtitle.Text = page.Subtitle or ""
+	self.Breadcrumb.Text = Text.display(page.Breadcrumb or self.Title) .. "  /  " .. Text.display(page.Name)
+	self.Subtitle.Text = Text.display(page.Subtitle)
 	self.Breadcrumb.Size = UDim2.new(page.Subtitle and 0.65 or 1, -14, 1, 0)
 	self:CloseSearch()
 	if self.Tooltips then
@@ -205,7 +207,7 @@ function Window:DeselectPage()
 	end
 	self.SelectedPage = nil
 	if self.Scope.Alive then
-		self.Breadcrumb.Text = self.Title
+		self.Breadcrumb.Text = Text.display(self.Title)
 		self.Subtitle.Text = ""
 	end
 end
@@ -279,20 +281,30 @@ end
 
 function Window:SetTheme(patch)
 	patch = ThemeAliases.patch(patch)
+	if patch.Font ~= nil then
+		patch.Font = assert(Fonts.resolve(patch.Font), "Invalid theme font")
+		if patch.FontBold == nil then
+			patch.FontBold = Fonts.bold(patch.Font)
+		end
+	end
+	if patch.FontBold ~= nil then
+		patch.FontBold = assert(Fonts.resolve(patch.FontBold), "Invalid heading font")
+	end
 	for token, value in pairs(patch) do
 		self.Theme[token] = value
 	end
 	for instance, bindings in pairs(self.Bindings) do
 		local tween = self.Tweens[instance]
 		if tween then
-			for _, token in pairs(bindings) do
-				if patch[token] ~= nil then
+			local goals = self.TweenGoals[instance] or {}
+			for property, token in pairs(bindings) do
+				if patch[token] ~= nil and goals[property] ~= nil then
 					tween:Cancel()
 					tween:Destroy()
 					self.Tweens[instance] = nil
-					if instance == self.Root then
-						self.Root.Visible = self.Visible
-						self.Root.GroupTransparency = self.Visible and 0 or 1
+					self.TweenGoals[instance] = nil
+					for goalProperty, goal in pairs(goals) do
+						Core.assign(instance, goalProperty, goal)
 					end
 					break
 				end
@@ -301,7 +313,7 @@ function Window:SetTheme(patch)
 		for property, token in pairs(bindings) do
 			if patch[token] ~= nil then
 				local value = self.Theme[token]
-				instance[property] = property == "CornerRadius" and UDim.new(0, value) or value
+				Core.assign(instance, property, property == "CornerRadius" and UDim.new(0, value) or value)
 			end
 		end
 	end
@@ -439,6 +451,7 @@ function Window:Destroy()
 		tween:Destroy()
 	end
 	table.clear(self.Tweens)
+	table.clear(self.TweenGoals)
 	self.Scope:Destroy()
 	table.clear(self.Bindings)
 	table.clear(self.Pages)
@@ -459,7 +472,7 @@ function Window:SetProfile(description, status)
 		self.ProfileDescription = description
 	end
 	if status then
-		self.ProfileStatus.Text = status
+		self.ProfileStatus.Text = Text.display(status)
 	end
 end
 
@@ -473,6 +486,7 @@ function Window.new(options, theme, scope)
 		Theme = table.clone(theme),
 		Bindings = {},
 		Tweens = {},
+		TweenGoals = {},
 		Pages = {},
 		Groups = {},
 		SearchEntries = {},
@@ -554,7 +568,7 @@ function Window.new(options, theme, scope)
 	Core.bind(self, edge, "BackgroundColor3", "Border")
 	local logo = Icons.create(self, self.Sidebar, "logo", "Text")
 	logo.Position = UDim2.fromOffset(12, 15)
-	local branding = Core.text(self, self.Sidebar, string.upper(options.Title or options.Name or "Unknown Hub"), 10)
+	local branding = Core.text(self, self.Sidebar, options.Title or options.Name or "Unknown Hub", 10)
 	Core.bind(self, branding, "Font", "FontBold")
 	branding.Position = UDim2.fromOffset(34, 0)
 	branding.Size = UDim2.new(1, -38, 0, 44)
@@ -588,7 +602,7 @@ function Window.new(options, theme, scope)
 	)
 	avatar.Position = UDim2.fromOffset(10, 6)
 	avatar.Size = UDim2.fromOffset(20, 26)
-	local username = Core.text(self, profile, options.Username or Players.LocalPlayer.DisplayName, 10)
+	local username = Core.text(self, profile, options.Username or Players.LocalPlayer.DisplayName, 10, nil, true)
 	username.Position = UDim2.fromOffset(36, 5)
 	username.Size = UDim2.new(1, -40, 0, 16)
 	local status = Core.text(self, profile, options.Status or "Online", 9, "TextMuted")
